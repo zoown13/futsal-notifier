@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -7,13 +6,17 @@
     <title>풋살장 예약 알리미</title>
     <style>
         body { font-family: sans-serif; margin: 2em; }
-        .container { max-width: 600px; margin: 0 auto; }
+        .container { max-width: 800px; margin: 0 auto; }
         .form-group { margin-bottom: 1em; }
         label { display: block; margin-bottom: 0.5em; }
         input { width: 100%; padding: 0.5em; box-sizing: border-box; }
         button { padding: 0.7em 1.5em; background-color: #007bff; color: white; border: none; cursor: pointer; }
         #results { margin-top: 2em; }
-        .court { border-bottom: 1px solid #ccc; padding: 1em 0; }
+        .court { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 5px; }
+        .court h3 { margin-top: 0; }
+        .time-slot { border-top: 1px solid #eee; padding: 0.5em 0; }
+        .time-slot:first-child { border-top: none; }
+        .highlight { background-color: #e6ffe6; border: 1px solid #00cc00; padding: 0.5em; margin-bottom: 0.5em; }
     </style>
 </head>
 <body>
@@ -25,7 +28,7 @@
                 <input type="date" id="search_date" name="search_date" required>
             </div>
             <div class="form-group">
-                <label for="region">지역 (예: 서울, 수원)</label>
+                <label for="region">지역 (예: 잠실, 수원)</label>
                 <input type="text" id="region" name="region" placeholder="지역명을 입력하세요">
             </div>
             <div class="form-group">
@@ -54,16 +57,64 @@
             resultsDiv.innerHTML = ''; // 이전 결과 지우기
             if (courts.length > 0) {
                 courts.forEach(court => {
-                    const courtDiv = document.createElement('div');
-                    courtDiv.className = 'court';
-                    courtDiv.innerHTML = `
-                        <h3>${court.name}</h3>
-                        <p><strong>주소:</strong> ${court.address}</p>
-                        <p><strong>시간:</strong> ${court.time}</p>
-                        <p><strong>가격:</strong> ${court.price.toLocaleString()}원</p>
-                    `;
-                    resultsDiv.appendChild(courtDiv);
+                    // 예약 가능한 시간이 있는 경우에만 표시
+                    if (court.available_times.length > 0) {
+                        const courtDiv = document.createElement('div');
+                        courtDiv.className = 'court';
+                        
+                        let exactTimesHtml = '';
+                        let nearbyTimesHtml = '';
+                        let allTimesHtml = ''; // 'any' 타입 시간대를 위한 변수
+
+                        court.available_times.forEach(slot => {
+                            const timeSlotHtml = `
+                                <div class="time-slot">
+                                    <span><strong>날짜:</strong> ${slot.date}</span>
+                                    <span><strong>시간:</strong> ${slot.time}</span>
+                                    <span><strong>가격:</strong> ${slot.price.toLocaleString()}원</span>
+                                </div>
+                            `;
+                            if (slot.match_type === 'exact') {
+                                exactTimesHtml += timeSlotHtml;
+                            } else if (slot.match_type === 'nearby') {
+                                nearbyTimesHtml += timeSlotHtml;
+                            } else if (slot.match_type === 'any') { // 'any' 타입 처리
+                                allTimesHtml += timeSlotHtml;
+                            }
+                        });
+
+                        let courtContentHtml = `
+                            <h3>${court.name}</h3>
+                            <p><strong>주소:</strong> ${court.address}</p>
+                        `;
+
+                        if (exactTimesHtml) {
+                            courtContentHtml += `
+                                <h4 class="highlight">정확히 일치하는 시간대</h4>
+                                <div class="highlight-section">${exactTimesHtml}</div>
+                            `;
+                        }
+                        if (nearbyTimesHtml) {
+                            courtContentHtml += `
+                                <h4>근방 시간대 (±30분)</h4>
+                                <div>${nearbyTimesHtml}</div>
+                            `;
+                        }
+                        if (allTimesHtml && !exactTimesHtml && !nearbyTimesHtml) { // 시간 조건 없이 검색했을 때만 표시
+                            courtContentHtml += `
+                                <h4>모든 예약 가능 시간대</h4>
+                                <div>${allTimesHtml}</div>
+                            `;
+                        }
+
+                        courtDiv.innerHTML = courtContentHtml;
+                        resultsDiv.appendChild(courtDiv);
+                    }
                 });
+                 // 모든 구장에 예약 가능한 시간이 없는 경우 메시지 표시
+                if (resultsDiv.innerHTML === '') {
+                    resultsDiv.innerHTML = '<p>해당 조건에 맞는 예약 가능한 풋살장이 없습니다.</p>';
+                }
             } else {
                 resultsDiv.innerHTML = '<p>해당 조건에 맞는 예약 가능한 풋살장이 없습니다.</p>';
             }
