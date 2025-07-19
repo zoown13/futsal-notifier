@@ -1,0 +1,73 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>풋살장 예약 알리미</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .form-group { margin-bottom: 1em; }
+        label { display: block; margin-bottom: 0.5em; }
+        input { width: 100%; padding: 0.5em; box-sizing: border-box; }
+        button { padding: 0.7em 1.5em; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        #results { margin-top: 2em; }
+        .court { border-bottom: 1px solid #ccc; padding: 1em 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>풋살장 예약 검색</h1>
+        <form id="search-form">
+            <div class="form-group">
+                <label for="search_date">날짜</label>
+                <input type="date" id="search_date" name="search_date" required>
+            </div>
+            <div class="form-group">
+                <label for="region">지역 (예: 서울, 수원)</label>
+                <input type="text" id="region" name="region" placeholder="지역명을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label for="time">시간 (예: 20:00)</label>
+                <input type="time" id="time" name="time">
+            </div>
+            <button type="submit">검색</button>
+        </form>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        document.getElementById('search-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>검색 중...</p>';
+
+            const response = await fetch('/search', {
+                method: 'POST',
+                body: new URLSearchParams(formData)
+            });
+
+            const courts = await response.json();
+
+            resultsDiv.innerHTML = ''; // 이전 결과 지우기
+            if (courts.length > 0) {
+                courts.forEach(court => {
+                    const courtDiv = document.createElement('div');
+                    courtDiv.className = 'court';
+                    courtDiv.innerHTML = `
+                        <h3>${court.name}</h3>
+                        <p><strong>주소:</strong> ${court.address}</p>
+                        <p><strong>시간:</strong> ${court.time}</p>
+                        <p><strong>가격:</strong> ${court.price.toLocaleString()}원</p>
+                    `;
+                    resultsDiv.appendChild(courtDiv);
+                });
+            } else {
+                resultsDiv.innerHTML = '<p>해당 조건에 맞는 예약 가능한 풋살장이 없습니다.</p>';
+            }
+        });
+    </script>
+</body>
+</html>
