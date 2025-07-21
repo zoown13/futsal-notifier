@@ -1,0 +1,57 @@
+name: Deploy to AWS Elastic Beanstalk
+
+on:
+  # main 브랜치에 push 이벤트가 발생했을 때 이 워크플로우를 실행합니다.
+  push:
+    branches:
+      - main
+
+# 워크플로우에서 사용할 환경 변수 설정
+env:
+  AWS_REGION: ap-northeast-2
+  S3_BUCKET_NAME: "futsal-notifier-artifacts-771785741123-ap-northeast-2" # 예: futsal-notifier-artifacts-...
+  EB_APPLICATION_NAME: "futsal-notifier"          # CloudFormation에서 생성한 애플리케이션 이름
+  EB_ENVIRONMENT_NAME: "futsal-notifier-env"      # CloudFormation에서 생성한 환경 이름
+
+jobs:
+  deploy:
+    name: Build, Zip, and Deploy
+    runs-on: ubuntu-latest
+    steps:
+      # 1. GitHub 리포지토리의 소스 코드를 워크플로우 실행 환경으로 가져옵니다.
+      - name: Checkout source code
+        uses: actions/checkout@v3
+
+      # 2. GitHub Secrets에 저장된 AWS 자격 증명을 사용하여 AWS CLI를 설정합니다.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. 배포에 필요한 파일들을 .zip 파일로 압축합니다.
+      #    각 배포를 고유하게 식별하기 위해 파일 이름에 커밋 해시(SHA)를 포함합니다.
+      - name: Create .zip file for deployment
+        id: create_zip
+        run: |
+          ZIP_FILE="futsal-notifier-${{ github.sha }}.zip"
+          zip -r $ZIP_FILE app.py Dockerfile requirements.txt templates/
+          echo "zip_file=$ZIP_FILE" >> $GITHUB_OUTPUT
+
+      # 4. 압축된 .zip 파일을 S3 버킷에 업로드합니다.
+      - name: Upload to S3
+        run: aws s3 cp ${{ steps.create_zip.outputs.zip_file }} s3://${{ env.S3_BUCKET_NAME }}/
+
+      # 5. Elastic Beanstalk에 새 애플리케이션 버전을 배포합니다.
+      #    이 액션은 CloudFormation을 건드리지 않고, 오직 애플리케이션 코드만 안전하게 업데이트합니다.
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v21
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ env.EB_APPLICATION_NAME }}
+          environment_name: ${{ env.EB_ENVIRONMENT_NAME }}
+          version_label: "ver-${{ github.sha }}"
+          region: ${{ env.AWS_REGION }}
+          deployment_package: ${{ steps.create_zip.outputs.zip_file }}
