@@ -77,6 +77,7 @@ Resources:
     Type: AWS::ElasticBeanstalk::Environment
     Properties:
       ApplicationName: !Ref EBApplication
+      EnvironmentName: !Sub "${EBApplication}-env" # 예측 가능한 환경 이름 설정
       Description: "Futsal Notifier Environment"
       SolutionStackName: "64bit Amazon Linux 2 v4.2.1 running Docker"
       VersionLabel: !Ref EBApplicationVersion
@@ -92,6 +93,11 @@ Resources:
           Value: !Ref EC2InstanceProfile
 
 Outputs:
+  EBEnvironmentName:
+    Description: "Name of the Elastic Beanstalk environment"
+    Value: !Ref EBEnvironment
+    Export:
+      Name: !Sub "${AWS::StackName}-EBEnvironmentName"
   EBEnvironmentUrl:
     Description: "URL of the running Elastic Beanstalk environment"
     Value: !GetAtt EBEnvironment.EndpointURL
