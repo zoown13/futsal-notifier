@@ -12,59 +12,69 @@
 
 ## 기술 스택
 
-- **Backend**: Flask, requests, datetime (Python 표준 라이브러리)
+- **Backend**: Flask, requests, gunicorn
 - **Frontend**: HTML, CSS, JavaScript
-- **외부 API**: Kakao Local API (지역 좌표 변환), iamground.kr API (풋살장 정보)
+- **외부 API**: Kakao Local API, iamground.kr API
+- **배포**: AWS Elastic Beanstalk, Docker, CloudFormation, S3
 
 ## 파일 구조
 
 ```
 futsal-notifier/
-├── app.py              # Flask 애플리케이션 (풋살장 검색 및 필터링 로직 포함)
-├── scraper.py          # (현재 사용되지 않음) 풋살장 정보 스크래핑 스크립트
+├── app.py              # Flask 애플리케이션 로직
+├── Dockerfile          # 애플리케이션 컨테이너화 설정
 ├── requirements.txt    # Python 의존성 파일
+├── cloudformation.yml  # AWS 인프라 정의 (IaC)
 ├── templates/
-│   └── index.html      # 메인 웹 페이지 (검색 UI 및 결과 표시)
+│   └── index.html      # 메인 웹 페이지
 └── README.md           # 프로젝트 설명 파일
 ```
 
-## 실행 방법
+## AWS 배포 방법 (CloudFormation 사용)
 
-1.  **저장소 복제**
+이 프로젝트는 AWS CloudFormation을 사용하여 필요한 모든 인프라를 자동으로 생성하고 배포합니다.
+
+### 1단계: 사전 준비
+
+1.  **AWS 계정** 및 **AWS CLI**를 준비합니다.
+2.  **Docker**를 로컬 컴퓨터에 설치합니다.
+3.  **Kakao Local API 키**를 발급받습니다. ([카카오 개발자](https://developers.kakao.com/)에서 발급)
+
+### 2단계: 소스 코드 압축 및 S3 업로드
+
+1.  배포할 소스 코드를 `.zip` 파일로 압축합니다. (단, `.git`, `venv` 등 불필요한 파일은 제외)
     ```bash
-    git clone https://github.com/your-username/futsal-notifier.git
-    cd futsal-notifier
+    # 예시 (Linux/macOS):
+    zip -r futsal-notifier.zip app.py Dockerfile requirements.txt templates/
     ```
 
-2.  **가상 환경 생성 및 활성화**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # Linux/macOS
-    # venv\Scripts\activate  # Windows
-    ```
+2.  AWS S3에 배포용 버킷을 생성합니다. 버킷 이름은 전 세계적으로 고유해야 합니다.
+    -   **추천 버킷 이름 형식**: `[프로젝트명]-artifacts-[AWS계정ID]-[리전]`
+    -   **예시**: `futsal-notifier-artifacts-123456789012-ap-northeast-2`
 
-3.  **의존성 설치**
-    ```bash
-    pip install -r requirements.txt
-    ```
+3.  생성한 S3 버킷에 `futsal-notifier.zip` 파일을 업로드합니다.
 
-4.  **Kakao Local API 키 설정**
-    `app.py` 파일 내 `KAKAO_API_KEY` 변수에 본인의 카카오 개발자 계정에서 발급받은 REST API 키를 입력해야 합니다.
-    ```python
-    KAKAO_API_KEY = 'YOUR_KAKAO_REST_API_KEY'
-    ```
+### 3단계: CloudFormation 스택 생성
 
-5.  **Flask 애플리케이션 실행**
-    ```bash
-    python app.py
-    ```
+1.  AWS Management Console에 로그인하여 **CloudFormation** 서비스로 이동합니다.
+2.  **"스택 생성"** > **"새 리소스 사용(표준)"**을 선택합니다.
+3.  **"템플릿 파일 업로드"**를 선택하고 `cloudformation.yml` 파일을 업로드합니다.
+4.  **스택 이름**을 입력합니다. (예: `futsal-notifier-stack`)
+5.  **파라미터** 섹션에 다음 값을 입력합니다.
+    -   `KakaoApiKey`: 발급받은 카카오 API 키
+    -   `SourceS3Bucket`: 2단계에서 생성한 S3 버킷 이름
+    -   `SourceS3Key`: S3에 업로드한 `.zip` 파일 이름 (예: `futsal-notifier.zip`)
+6.  나머지 옵션은 기본값으로 두고 스택 생성을 완료합니다.
 
-6.  웹 브라우저에서 `http://127.0.0.1:5000`으로 접속합니다.
+### 4단계: 배포 확인
 
-## 개선 제안
+-   스택 생성이 완료되면 (약 5-10분 소요), CloudFormation 스택의 **"출력(Outputs)"** 탭으로 이동합니다.
+-   `EBEnvironmentUrl`에 표시된 URL을 클릭하여 배포된 애플리케이션을 확인합니다.
 
--   **알림 기능 추가**: 특정 조건의 풋살장이 예약 가능할 때 사용자에게 이메일, SMS 등으로 알림을 보내는 기능을 추가할 수 있습니다.
--   **주기적인 데이터 업데이트 및 캐싱**: `iamground.kr` API 호출 횟수를 줄이기 위해 주기적으로 데이터를 가져와 캐싱하거나 데이터베이스에 저장하는 기능을 고려할 수 있습니다.
--   **사용자 인터페이스 개선**: 날짜 및 시간 선택을 위한 달력 및 시간 선택 위젯을 더욱 사용자 친화적으로 개선하고, 검색 결과를 필터링하거나 정렬하는 기능을 추가하여 사용자 편의성을 높일 수 있습니다.
--   **오류 처리 강화**: API 호출 실패 시 사용자에게 더 명확한 메시지를 제공하고, 네트워크 오류 등에 대한 견고한 처리를 추가합니다.
--   **성능 최적화**: 대량의 데이터를 처리할 때 검색 및 필터링 성능을 최적화하는 방법을 고려할 수 있습니다.
+## 로컬에서 실행 방법
+
+1.  **가상 환경 생성 및 활성화**
+2.  **의존성 설치**: `pip install -r requirements.txt`
+3.  **Kakao API 키 설정**: `app.py` 파일의 `KAKAO_API_KEY` 변수에 키를 직접 입력합니다.
+4.  **애플리케이션 실행**: `python app.py`
+5.  웹 브라우저에서 `http://127.0.0.1:5000`으로 접속합니다.

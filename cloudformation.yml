@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation template for deploying the futsal-notifier Flask application
+  on AWS Elastic Beanstalk using a Docker source bundle from S3.
+
+Parameters:
+  KakaoApiKey:
+    Type: String
+    Description: The KAKAO_API_KEY for the application.
+    NoEcho: true
+
+  SourceS3Bucket:
+    Type: String
+    Description: The S3 bucket name for the source bundle (e.g., futsal-notifier-artifacts-...).
+
+  SourceS3Key:
+    Type: String
+    Description: The S3 key (file path) for the source bundle .zip file (e.g., futsal-notifier.zip).
+
+Resources:
+  # 1. Secret in AWS Secrets Manager to store the API key
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: futsal-notifier/kakao-api-key
+      Description: "Kakao API Key for the futsal-notifier application"
+      SecretString: !Ref KakaoApiKey
+
+  # 2. IAM Role for Elastic Beanstalk EC2 instances
+  EC2InstanceProfileRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker
+      Policies:
+        - PolicyName: SecretsManagerReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecret
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceProfileRole
+
+  # 3. Elastic Beanstalk Application
+  EBApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: futsal-notifier
+      Description: "Flask application for futsal court notifications"
+
+  # 4. Elastic Beanstalk Application Version (Points to the S3 source bundle)
+  EBApplicationVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName: !Ref EBApplication
+      Description: "Version from S3 source bundle"
+      SourceBundle:
+        S3Bucket: !Ref SourceS3Bucket
+        S3Key: !Ref SourceS3Key
+
+  # 5. Elastic Beanstalk Environment (The actual running environment)
+  EBEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref EBApplication
+      Description: "Futsal Notifier Environment"
+      SolutionStackName: "64bit Amazon Linux 2 v3.4.5 running Docker"
+      VersionLabel: !Ref EBApplicationVersion
+      OptionSettings:
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance # For cost saving. Can be changed to LoadBalanced.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KAKAO_API_KEY
+          Value: !Sub '{{resolve:secretsmanager:${AppSecret}}}' # Resolve secret at runtime
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref EC2InstanceProfile
+
+Outputs:
+  EBEnvironmentUrl:
+    Description: "URL of the running Elastic Beanstalk environment"
+    Value: !GetAtt EBEnvironment.EndpointURL
