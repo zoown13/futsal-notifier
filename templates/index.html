@@ -11,6 +11,7 @@
         label { display: block; margin-bottom: 0.5em; }
         input { width: 100%; padding: 0.5em; box-sizing: border-box; }
         button { padding: 0.7em 1.5em; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        #map { width: 100%; height: 400px; margin-bottom: 2em; }
         #results { margin-top: 2em; }
         .court { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 5px; }
         .court h3 { margin-top: 0; }
@@ -18,6 +19,7 @@
         .time-slot:first-child { border-top: none; }
         .highlight { background-color: #e6ffe6; border: 1px solid #00cc00; padding: 0.5em; margin-bottom: 0.5em; }
     </style>
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=18e53a0029ed6e4bcf2c384648c0ee5c&libraries=services"></script>
 </head>
 <body>
     <div class="container">
@@ -37,6 +39,7 @@
             </div>
             <button type="submit">검색</button>
         </form>
+        <div id="map"></div>
         <div id="results"></div>
     </div>
 
@@ -45,6 +48,8 @@
             e.preventDefault();
             const formData = new FormData(this);
             const resultsDiv = document.getElementById('results');
+            const mapContainer = document.getElementById('map');
+            mapContainer.style.display = 'none'; // 검색 전에는 지도 숨기기
             resultsDiv.innerHTML = '<p>검색 중...</p>';
 
             const response = await fetch('/search', {
@@ -55,16 +60,19 @@
             const courts = await response.json();
 
             resultsDiv.innerHTML = ''; // 이전 결과 지우기
-            if (courts.length > 0) {
+
+            if (courts.length > 0 && courts.some(c => c.available_times.length > 0)) {
+                mapContainer.style.display = 'block'; // 결과 있으면 지도 표시
+                displayMapAndMarkers(courts);
+
                 courts.forEach(court => {
-                    // 예약 가능한 시간이 있는 경우에만 표시
                     if (court.available_times.length > 0) {
                         const courtDiv = document.createElement('div');
                         courtDiv.className = 'court';
                         
                         let exactTimesHtml = '';
                         let nearbyTimesHtml = '';
-                        let allTimesHtml = ''; // 'any' 타입 시간대를 위한 변수
+                        let allTimesHtml = '';
 
                         court.available_times.forEach(slot => {
                             const timeSlotHtml = `
@@ -74,51 +82,52 @@
                                     <span><strong>가격:</strong> ${slot.price.toLocaleString()}원</span>
                                 </div>
                             `;
-                            if (slot.match_type === 'exact') {
-                                exactTimesHtml += timeSlotHtml;
-                            } else if (slot.match_type === 'nearby') {
-                                nearbyTimesHtml += timeSlotHtml;
-                            } else if (slot.match_type === 'any') { // 'any' 타입 처리
-                                allTimesHtml += timeSlotHtml;
-                            }
+                            if (slot.match_type === 'exact') exactTimesHtml += timeSlotHtml;
+                            else if (slot.match_type === 'nearby') nearbyTimesHtml += timeSlotHtml;
+                            else if (slot.match_type === 'any') allTimesHtml += timeSlotHtml;
                         });
 
-                        let courtContentHtml = `
-                            <h3>${court.name}</h3>
-                            <p><strong>주소:</strong> ${court.address}</p>
-                        `;
-
-                        if (exactTimesHtml) {
-                            courtContentHtml += `
-                                <h4 class="highlight">정확히 일치하는 시간대</h4>
-                                <div class="highlight-section">${exactTimesHtml}</div>
-                            `;
-                        }
-                        if (nearbyTimesHtml) {
-                            courtContentHtml += `
-                                <h4>근방 시간대 (±30분)</h4>
-                                <div>${nearbyTimesHtml}</div>
-                            `;
-                        }
-                        if (allTimesHtml && !exactTimesHtml && !nearbyTimesHtml) { // 시간 조건 없이 검색했을 때만 표시
-                            courtContentHtml += `
-                                <h4>모든 예약 가능 시간대</h4>
-                                <div>${allTimesHtml}</div>
-                            `;
-                        }
+                        let courtContentHtml = `<h3>${court.name}</h3><p><strong>주소:</strong> ${court.address}</p>`;
+                        if (exactTimesHtml) courtContentHtml += `<h4 class="highlight">정확히 일치하는 시간대</h4><div>${exactTimesHtml}</div>`;
+                        if (nearbyTimesHtml) courtContentHtml += `<h4>근방 시간대 (±30분)</h4><div>${nearbyTimesHtml}</div>`;
+                        if (allTimesHtml && !exactTimesHtml && !nearbyTimesHtml) courtContentHtml += `<h4>모든 예약 가능 시간대</h4><div>${allTimesHtml}</div>`;
 
                         courtDiv.innerHTML = courtContentHtml;
                         resultsDiv.appendChild(courtDiv);
                     }
                 });
-                 // 모든 구장에 예약 가능한 시간이 없는 경우 메시지 표시
-                if (resultsDiv.innerHTML === '') {
-                    resultsDiv.innerHTML = '<p>해당 조건에 맞는 예약 가능한 풋살장이 없습니다.</p>';
-                }
             } else {
                 resultsDiv.innerHTML = '<p>해당 조건에 맞는 예약 가능한 풋살장이 없습니다.</p>';
             }
         });
+
+        function displayMapAndMarkers(courts) {
+            const mapContainer = document.getElementById('map');
+            const firstCourtWithCoords = courts.find(c => c.latitude && c.longitude);
+            
+            if (!firstCourtWithCoords) return; // 좌표 있는 구장이 없으면 지도 표시 안함
+
+            const mapOption = {
+                center: new kakao.maps.LatLng(firstCourtWithCoords.latitude, firstCourtWithCoords.longitude),
+                level: 7
+            };
+            const map = new kakao.maps.Map(mapContainer, mapOption);
+
+            courts.forEach(court => {
+                if (court.latitude && court.longitude) {
+                    const markerPosition = new kakao.maps.LatLng(court.latitude, court.longitude);
+                    const marker = new kakao.maps.Marker({ position: markerPosition });
+                    marker.setMap(map);
+
+                    const iwContent = `<div style="padding:5px;">${court.name}<br><a href="https://map.kakao.com/link/to/${court.name},${court.latitude},${court.longitude}" style="color:blue" target="_blank">길찾기</a></div>`;
+                    const infowindow = new kakao.maps.InfoWindow({ content: iwContent, removable: true });
+
+                    kakao.maps.event.addListener(marker, 'click', function() {
+                        infowindow.open(map, marker);
+                    });
+                }
+            });
+        }
     </script>
 </body>
 </html>

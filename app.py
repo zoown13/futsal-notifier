@@ -101,6 +101,8 @@ def find_courts(search_date, target_region, target_time):
                 courts_dict[court_key] = {
                     "name": court_name,
                     "address": court_address,
+                    "latitude": court.get("latitude"),
+                    "longitude": court.get("longitude"),
                     "available_times": []
                 }
 
