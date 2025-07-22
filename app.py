@@ -2,12 +2,13 @@ from flask import Flask, request, jsonify, render_template
 import requests
 import json
 import math
+import os
 from datetime import datetime, time, timedelta
 
 app = Flask(__name__)
 
-# 카카오 로컬 API 키 (반드시 본인의 키로 교체해야 합니다)
-KAKAO_API_KEY = '9b2262eab01b836c0be7d06874a1d126'
+# 카카오 로컬 API 키 (환경 변수에서 읽어옴)
+KAKAO_API_KEY = os.getenv('KAKAO_API_KEY')
 
 def get_coords_from_address(address):
     """
