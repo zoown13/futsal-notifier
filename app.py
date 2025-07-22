@@ -42,7 +42,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-def find_courts(search_date, target_region, target_time):
+def find_courts(search_date, target_time, target_region=None, lat=None, lon=None):
     """
     아이엠그라운드에서 조건에 맞는 풋살장을 찾아 그룹화하여 반환합니다.
     """
@@ -53,8 +53,12 @@ def find_courts(search_date, target_region, target_time):
         "from": "full_info",
         "search_date": search_date,
     }
+    # 지역명 또는 좌표에 따라 검색어 설정
     if target_region:
         payload["search_word"] = target_region
+    elif lat and lon:
+        # 좌표가 있으면 별도의 검색어는 사용하지 않음 (전체 목록에서 필터링)
+        pass
 
     print("Sending payload to iamground.kr:", payload)
 
@@ -70,7 +74,10 @@ def find_courts(search_date, target_region, target_time):
 
         courts_dict = {}
         center_lat, center_lon = None, None
-        if target_region:
+        
+        if lat and lon:
+            center_lat, center_lon = float(lat), float(lon)
+        elif target_region:
             center_lat, center_lon = get_coords_from_address(target_region)
 
         for court in data.get("list", []):
@@ -174,6 +181,8 @@ def search():
     search_date = request.form.get('search_date')
     region = request.form.get('region')
     time = request.form.get('time')
+    lat = request.form.get('lat')
+    lon = request.form.get('lon')
 
     if time:
         # time이 HH:MM:SS 형식으로 들어올 경우 HH:MM으로 자름
@@ -181,7 +190,7 @@ def search():
             time = time[:5]
         # HH:MM 형식인 경우 그대로 사용
 
-    courts = find_courts(search_date, region, time)
+    courts = find_courts(search_date, time, target_region=region, lat=lat, lon=lon)
     return jsonify(courts)
 
 if __name__ == '__main__':

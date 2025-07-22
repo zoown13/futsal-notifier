@@ -11,7 +11,9 @@
         label { display: block; margin-bottom: 0.5em; }
         input { width: 100%; padding: 0.5em; box-sizing: border-box; }
         button { padding: 0.7em 1.5em; background-color: #007bff; color: white; border: none; cursor: pointer; }
-        #map { width: 100%; height: 400px; margin-bottom: 2em; }
+        #map-container { position: relative; }
+        #map { width: 100%; height: 400px; margin-bottom: 1em; }
+        #re-search-btn { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2; padding: 10px 15px; background-color: white; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; display: none; color: black; }
         #results { margin-top: 2em; }
         .court { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 5px; }
         .court h3 { margin-top: 0; }
@@ -23,7 +25,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>풋살장 예약 검색 (v2 - CI/CD 배포 성공!)</h1>
+        <h1>풋살장 예약 검색</h1>
         <form id="search-form">
             <div class="form-group">
                 <label for="search_date">날짜</label>
@@ -39,18 +41,43 @@
             </div>
             <button type="submit">검색</button>
         </form>
-        <div id="map"></div>
+        <div id="map-container">
+            <div id="map"></div>
+            <button id="re-search-btn">이 지역에서 재검색</button>
+        </div>
         <div id="results"></div>
     </div>
 
     <script>
-        document.getElementById('search-form').addEventListener('submit', async function(e) {
+        let map; // 전역 변수로 지도 객체 선언
+
+        document.getElementById('search-form').addEventListener('submit', function(e) {
             e.preventDefault();
-            const formData = new FormData(this);
+            performSearch();
+        });
+
+        document.getElementById('re-search-btn').addEventListener('click', function() {
+            const center = map.getCenter();
+            performSearch({ lat: center.getLat(), lon: center.getLng() });
+        });
+
+        async function performSearch(coords = null) {
+            const formData = new FormData(document.getElementById('search-form'));
             const resultsDiv = document.getElementById('results');
             const mapContainer = document.getElementById('map');
-            mapContainer.style.display = 'none'; // 검색 전에는 지도 숨기기
+            const reSearchBtn = document.getElementById('re-search-btn');
+
+            if (!coords) { // 최초 검색 시
+                mapContainer.style.display = 'none';
+                reSearchBtn.style.display = 'none';
+            }
             resultsDiv.innerHTML = '<p>검색 중...</p>';
+
+            if (coords) {
+                formData.delete('region'); // 좌표 검색 시 지역명은 제거
+                formData.append('lat', coords.lat);
+                formData.append('lon', coords.lon);
+            }
 
             const response = await fetch('/search', {
                 method: 'POST',
@@ -58,60 +85,41 @@
             });
 
             const courts = await response.json();
-
-            resultsDiv.innerHTML = ''; // 이전 결과 지우기
+            resultsDiv.innerHTML = '';
 
             if (courts.length > 0 && courts.some(c => c.available_times.length > 0)) {
-                mapContainer.style.display = 'block'; // 결과 있으면 지도 표시
+                mapContainer.style.display = 'block';
+                reSearchBtn.style.display = 'block';
                 displayMapAndMarkers(courts);
-
-                courts.forEach(court => {
-                    if (court.available_times.length > 0) {
-                        const courtDiv = document.createElement('div');
-                        courtDiv.className = 'court';
-                        
-                        let exactTimesHtml = '';
-                        let nearbyTimesHtml = '';
-                        let allTimesHtml = '';
-
-                        court.available_times.forEach(slot => {
-                            const timeSlotHtml = `
-                                <div class="time-slot">
-                                    <span><strong>날짜:</strong> ${slot.date}</span>
-                                    <span><strong>시간:</strong> ${slot.time}</span>
-                                    <span><strong>가격:</strong> ${slot.price.toLocaleString()}원</span>
-                                </div>
-                            `;
-                            if (slot.match_type === 'exact') exactTimesHtml += timeSlotHtml;
-                            else if (slot.match_type === 'nearby') nearbyTimesHtml += timeSlotHtml;
-                            else if (slot.match_type === 'any') allTimesHtml += timeSlotHtml;
-                        });
-
-                        let courtContentHtml = `<h3>${court.name}</h3><p><strong>주소:</strong> ${court.address}</p>`;
-                        if (exactTimesHtml) courtContentHtml += `<h4 class="highlight">정확히 일치하는 시간대</h4><div>${exactTimesHtml}</div>`;
-                        if (nearbyTimesHtml) courtContentHtml += `<h4>근방 시간대 (±30분)</h4><div>${nearbyTimesHtml}</div>`;
-                        if (allTimesHtml && !exactTimesHtml && !nearbyTimesHtml) courtContentHtml += `<h4>모든 예약 가능 시간대</h4><div>${allTimesHtml}</div>`;
-
-                        courtDiv.innerHTML = courtContentHtml;
-                        resultsDiv.appendChild(courtDiv);
-                    }
-                });
+                displayCourtList(courts);
             } else {
                 resultsDiv.innerHTML = '<p>해당 조건에 맞는 예약 가능한 풋살장이 없습니다.</p>';
+                mapContainer.style.display = 'none';
+                reSearchBtn.style.display = 'none';
             }
-        });
+        }
 
         function displayMapAndMarkers(courts) {
             const mapContainer = document.getElementById('map');
             const firstCourtWithCoords = courts.find(c => c.latitude && c.longitude);
             
-            if (!firstCourtWithCoords) return; // 좌표 있는 구장이 없으면 지도 표시 안함
+            if (!firstCourtWithCoords) return;
 
             const mapOption = {
                 center: new kakao.maps.LatLng(firstCourtWithCoords.latitude, firstCourtWithCoords.longitude),
                 level: 7
             };
-            const map = new kakao.maps.Map(mapContainer, mapOption);
+
+            if (!map) { // 최초 검색 시에만 지도 생성
+                map = new kakao.maps.Map(mapContainer, mapOption);
+                kakao.maps.event.addListener(map, 'dragend', function() {
+                    // 드래그가 끝나면 재검색 버튼을 활성화 (선택적)
+                });
+            } else {
+                map.setCenter(mapOption.center); // 재검색 시 중심 이동
+            }
+
+            // 기존 마커 제거 로직 추가 필요 (추후 개선)
 
             courts.forEach(court => {
                 if (court.latitude && court.longitude) {
@@ -125,6 +133,41 @@
                     kakao.maps.event.addListener(marker, 'click', function() {
                         infowindow.open(map, marker);
                     });
+                }
+            });
+        }
+
+        function displayCourtList(courts) {
+            const resultsDiv = document.getElementById('results');
+            courts.forEach(court => {
+                if (court.available_times.length > 0) {
+                    const courtDiv = document.createElement('div');
+                    courtDiv.className = 'court';
+                    
+                    let exactTimesHtml = '';
+                    let nearbyTimesHtml = '';
+                    let allTimesHtml = '';
+
+                    court.available_times.forEach(slot => {
+                        const timeSlotHtml = `
+                            <div class="time-slot">
+                                <span><strong>날짜:</strong> ${slot.date}</span>
+                                <span><strong>시간:</strong> ${slot.time}</span>
+                                <span><strong>가격:</strong> ${slot.price.toLocaleString()}원</span>
+                            </div>
+                        `;
+                        if (slot.match_type === 'exact') exactTimesHtml += timeSlotHtml;
+                        else if (slot.match_type === 'nearby') nearbyTimesHtml += timeSlotHtml;
+                        else if (slot.match_type === 'any') allTimesHtml += timeSlotHtml;
+                    });
+
+                    let courtContentHtml = `<h3>${court.name}</h3><p><strong>주소:</strong> ${court.address}</p>`;
+                    if (exactTimesHtml) courtContentHtml += `<h4 class="highlight">정확히 일치하는 시간대</h4><div>${exactTimesHtml}</div>`;
+                    if (nearbyTimesHtml) courtContentHtml += `<h4>근방 시간대 (±30분)</h4><div>${nearbyTimesHtml}</div>`;
+                    if (allTimesHtml && !exactTimesHtml && !nearbyTimesHtml) courtContentHtml += `<h4>모든 예약 가능 시간대</h4><div>${allTimesHtml}</div>`;
+
+                    courtDiv.innerHTML = courtContentHtml;
+                    resultsDiv.appendChild(courtDiv);
                 }
             });
         }
