@@ -76,7 +76,9 @@
         /* Radio button styling for 실내/야외 */
         .radio-group {
             display: flex;
-            gap: 10px;
+            border: 1px solid #e0e0e0; /* Outer border for the group */
+            border-radius: 8px;
+            overflow: hidden; /* Ensures inner borders are clean */
             margin-top: 0.5em;
         }
         .radio-group input[type="radio"] {
@@ -85,22 +87,24 @@
         .radio-group label {
             flex: 1;
             text-align: center;
-            padding: 0.8em 1.2em;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            padding: 0.8em 0; /* Adjust padding for a more compact look */
+            border-right: 1px solid #e0e0e0; /* Vertical separator */
             cursor: pointer;
-            background-color: #f0f0f0;
-            transition: background-color 0.3s ease, border-color 0.3s ease;
+            background-color: #f8f8f8; /* Slightly different background for cells */
+            transition: background-color 0.3s ease, color 0.3s ease;
             font-weight: normal;
             color: #555;
+        }
+        .radio-group label:last-child {
+            border-right: none; /* No border on the last item */
         }
         .radio-group input[type="radio"]:checked + label {
             background-color: #007bff;
             color: white;
-            border-color: #007bff;
-            box-shadow: 0 2px 5px rgba(0, 123, 255, 0.2);
+            border-color: #007bff; /* Highlight border on checked */
+            box-shadow: inset 0 0 5px rgba(0, 123, 255, 0.3); /* Inner shadow for depth */
         }
-        .radio-group label:hover {
+        .radio-group label:hover:not(.radio-group input[type="radio"]:checked + label) {
             background-color: #e9e9e9;
         }
 
@@ -236,13 +240,19 @@
             </div>
             <div class="form-group">
                 <label>실내/야외</label>
-                <div>
-                    <input type="radio" id="indoor_all" name="is_indoor_filter" value="all" checked>
-                    <label for="indoor_all">전체</label>
-                    <input type="radio" id="indoor_yes" name="is_indoor_filter" value="Y">
-                    <label for="indoor_yes">실내</label>
-                    <input type="radio" id="indoor_no" name="is_indoor_filter" value="N">
-                    <label for="indoor_no">야외</label>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <label>
+                        <input type="radio" id="indoor_all" name="is_indoor_filter" value="all" checked>
+                        전체
+                    </label>
+                    <label>
+                        <input type="radio" id="indoor_yes" name="is_indoor_filter" value="Y">
+                        실내
+                    </label>
+                    <label>
+                        <input type="radio" id="indoor_no" name="is_indoor_filter" value="N">
+                        야외
+                    </label>
                 </div>
             </div>
             <button type="submit">검색</button>
