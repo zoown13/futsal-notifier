@@ -44,136 +44,136 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 
 def find_courts(search_date, target_time, target_region=None, lat=None, lon=None):
     """
-    아이엠그라운드에서 조건에 맞는 풋살장을 찾아 그룹화하여 반환합니다.
+    아이엠그라운드의 새로운 API를 사용하여 조건에 맞는 풋살장을 찾아 그룹화하여 반환합니다.
     """
-    url = "https://www.iamground.kr/futsal/s/_f.php"
-    payload = {
-        "limit": 200,
-        "offset": 0,
-        "from": "full_info",
-        "search_date": search_date,
-    }
-    # 지역명 또는 좌표에 따라 검색어 설정
-    if target_region:
-        payload["search_word"] = target_region
-    elif lat and lon:
-        # 좌표가 있으면 별도의 검색어는 사용하지 않음 (전체 목록에서 필터링)
-        pass
+    url = "https://prod-api.iamground.kr/api/v1/stadiums"
+    all_courts_data = []
+    page = 0
+    size = 50  # 한 번에 50개씩 요청
+    DISTANCE_LIMIT_KM = 5  # 5km 반경 제한
 
-    print("Sending payload to iamground.kr:", payload)
+    center_lat, center_lon = None, None
+    if lat and lon:
+        center_lat, center_lon = float(lat), float(lon)
+    elif target_region:
+        center_lat, center_lon = get_coords_from_address(target_region)
 
-    try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
-        data = response.json()
+    if not center_lat or not center_lon:
+        print("좌표를 얻을 수 없어 검색을 중단합니다.")
+        return []
 
-        # API 응답 전체를 파일로 저장 (디버깅용)
-        with open("iamground_raw_response.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        print("Raw API response saved to iamground_raw_response.json")
+    while True:
+        # search_date (e.g., "2025-08-08")를 datetime 객체로 변환
+        start_date_obj = datetime.strptime(search_date, "%Y-%m-%d")
+        # 다음 날을 계산
+        end_date_obj = start_date_obj + timedelta(days=1)
 
-        courts_dict = {}
-        center_lat, center_lon = None, None
-        
-        if lat and lon:
-            center_lat, center_lon = float(lat), float(lon)
-        elif target_region:
-            center_lat, center_lon = get_coords_from_address(target_region)
+        # API가 요구하는 형식으로 날짜 문자열 포맷팅
+        search_start_at_str = start_date_obj.strftime("%Y-%m-%d 00:00")
+        search_end_at_str = end_date_obj.strftime("%Y-%m-%d 00:00")
 
-        for court in data.get("list", []):
-            is_in_target_region_by_name = False
-            if target_region and target_region in court.get("fAddress", ""):
-                is_in_target_region_by_name = True
+        params = {
+            "stadium_type": "FUT",
+            "search_start_at": search_start_at_str,
+            "search_end_at": search_end_at_str,
+            "search_longitude": center_lon,
+            "search_latitude": center_lat,
+            "page": page,
+            "size": size
+        }
+        print("Sending GET request to iamground.kr API:", params)
 
-            is_nearby_geographically = False
-            if center_lat and center_lon:
-                court_lat = float(court.get("latitude", 0))
-                court_lon = float(court.get("longitude", 0))
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json().get('data', {})
+            current_list = data.get('list', [])
+
+            if not current_list:
+                break  # 더 이상 데이터가 없으면 루프 종료
+
+            courts_within_distance = []
+            all_courts_in_page_are_outside_limit = True
+
+            for court_data in current_list:
+                court_lat = court_data.get("latitude")
+                court_lon = court_data.get("longitude")
                 if court_lat and court_lon:
-                    # '근처 동네'를 포함하기 위한 더 넓은 반경 (예: 5km)
-                    NEARBY_RADIUS_KM = 5.0
-                    if haversine_distance(center_lat, center_lon, court_lat, court_lon) <= NEARBY_RADIUS_KM:
-                        is_nearby_geographically = True
-            
-            # 이름으로 일치하거나 지리적으로 가까운 경우 포함
-            if not is_in_target_region_by_name and not is_nearby_geographically:
+                    distance = haversine_distance(center_lat, center_lon, float(court_lat), float(court_lon))
+                    if distance <= DISTANCE_LIMIT_KM:
+                        courts_within_distance.append(court_data)
+                        all_courts_in_page_are_outside_limit = False
+
+            all_courts_data.extend(courts_within_distance)
+
+            # 현재 페이지의 모든 결과가 5km를 초과하면 더 이상 검색할 필요가 없음
+            if all_courts_in_page_are_outside_limit:
+                print(f"페이지 {page}의 모든 경기장이 {DISTANCE_LIMIT_KM}km를 초과하여 검색을 중단합니다.")
+                break
+
+            page += 1
+
+        except requests.exceptions.RequestException as e:
+            print(f"API 요청 오류: {e}")
+            return []
+        except json.JSONDecodeError:
+            print("JSON 파싱 오류")
+            return []
+
+    courts_dict = {}
+    for court in all_courts_data:
+        court_name = court.get("facility_name")
+        court_address = court.get("address")
+        court_key = (court_name, court_address)
+
+        if court_key not in courts_dict:
+            courts_dict[court_key] = {
+                "name": court_name,
+                "address": court_address,
+                "latitude": court.get("latitude"),
+                "longitude": court.get("longitude"),
+                "available_times": []
+            }
+
+        for reservation in court.get("schedule_list", []):
+            start_at_str = reservation.get("start_at", "")  # "YYYY-MM-DD HH:mm"
+            if not start_at_str or search_date not in start_at_str:
                 continue
 
-            court_name = court.get("fName")
-            court_address = court.get("fAddress")
-            # 이름과 주소를 키로 사용하여 동일한 구장을 식별
-            court_key = (court_name, court_address)
+            current_res_time_str = start_at_str.split(' ')[1]  # "HH:mm"
+            match_type = ""
 
-            if court_key not in courts_dict:
-                courts_dict[court_key] = {
-                    "name": court_name,
-                    "address": court_address,
-                    "latitude": court.get("latitude"),
-                    "longitude": court.get("longitude"),
-                    "available_times": []
-                }
+            if target_time:
+                try:
+                    target_time_obj = datetime.strptime(target_time, "%H:%M").time()
+                    res_time_obj = datetime.strptime(current_res_time_str, "%H:%M").time()
+                    dummy_date = datetime(2000, 1, 1)
+                    time_diff = abs(datetime.combine(dummy_date, target_time_obj) - datetime.combine(dummy_date, res_time_obj))
 
-            # 시간 정보 추가
-            for reservation in court.get("reserv", []):
-                # search_date 필터링 추가
-                if search_date and reservation.get("start_date") != search_date:
-                    continue
-
-                current_res_time_str = reservation.get("start_time")
-                match_type = ""
-
-                if target_time:
-                    try:
-                        # target_time과 reservation 시간을 time 객체로 변환
-                        target_time_obj = datetime.strptime(target_time, "%H:%M").time()
-                        res_time_obj = datetime.strptime(current_res_time_str, "%H:%M").time()
-
-                        # 시간 차이 계산 (timedelta 사용)
-                        # 날짜가 다르더라도 시간만 비교하기 위해 임의의 동일한 날짜를 사용
-                        dummy_date = datetime(2000, 1, 1)
-                        time_diff = abs(datetime.combine(dummy_date, target_time_obj) - datetime.combine(dummy_date, res_time_obj))
-
-                        # 정확히 일치하는 경우
-                        if time_diff == timedelta(minutes=0):
-                            match_type = "exact"
-                        # 근방 시간대 (예: ±30분)
-                        elif time_diff <= timedelta(minutes=30):
-                            match_type = "nearby"
-                        else:
-                            continue # 30분 이상 차이나면 건너뜀
-                    except ValueError:
-                        # 시간 형식 파싱 오류 시 건너뜀
+                    if time_diff == timedelta(minutes=0):
+                        match_type = "exact"
+                    elif time_diff <= timedelta(minutes=30):
+                        match_type = "nearby"
+                    else:
                         continue
-                else:
-                    # target_time이 없으면 모든 시간 슬롯을 포함
-                    match_type = "any"
-
-                # target_time이 있는데 match_type이 설정되지 않았다면 (필터링된 경우) 건너뜀
-                if target_time and not match_type:
+                except (ValueError, IndexError):
                     continue
+            else:
+                match_type = "any"
 
-                time_slot = {
-                    "date": reservation.get("start_date"),
-                    "time": f'{reservation.get("start_time")} - {reservation.get("end_time")}',
-                    "price": reservation.get("unit_price"),
-                    "match_type": match_type # 매치 타입 추가
-                }
-                # 동일한 시간 정보가 이미 추가되었는지 확인하여 중복 방지
-                if time_slot not in courts_dict[court_key]["available_times"]:
-                    courts_dict[court_key]["available_times"].append(time_slot)
-        
-        # 딕셔너리의 값들을 리스트로 변환하여 반환
-        return list(courts_dict.values())
-    except requests.exceptions.RequestException as e:
-        print(f"API 요청 오류: {e}")
-        return []
-    except json.JSONDecodeError:
-        (print("JSON 파싱 오류"))
-        return []
-@app.route('/')
-def index():
-    """메인 페이지를 렌더링합니다."""
-    return render_template('index.html')
+            if target_time and not match_type:
+                continue
+
+            time_slot = {
+                "date": start_at_str.split(' ')[0],
+                "time": f'{current_res_time_str} - {reservation.get("end_time")}',
+                "price": reservation.get("match_price"),
+                "match_type": match_type
+            }
+            if time_slot not in courts_dict[court_key]["available_times"]:
+                courts_dict[court_key]["available_times"].append(time_slot)
+
+    return list(courts_dict.values())
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -185,13 +185,16 @@ def search():
     lon = request.form.get('lon')
 
     if time:
-        # time이 HH:MM:SS 형식으로 들어올 경우 HH:MM으로 자름
         if len(time) > 5:
             time = time[:5]
-        # HH:MM 형식인 경우 그대로 사용
 
     courts = find_courts(search_date, time, target_region=region, lat=lat, lon=lon)
     return jsonify(courts)
+
+@app.route('/')
+def index():
+    """메인 페이지를 렌더링합니다."""
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
