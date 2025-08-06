@@ -42,7 +42,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-def find_courts(search_date, target_time, target_region=None, lat=None, lon=None):
+def find_courts(search_date, target_time, distance_limit, target_region=None, lat=None, lon=None):
     """
     아이엠그라운드의 새로운 API를 사용하여 조건에 맞는 풋살장을 찾아 그룹화하여 반환합니다.
     """
@@ -50,7 +50,6 @@ def find_courts(search_date, target_time, target_region=None, lat=None, lon=None
     all_courts_data = []
     page = 0
     size = 50  # 한 번에 50개씩 요청
-    DISTANCE_LIMIT_KM = 5  # 5km 반경 제한
 
     center_lat, center_lon = None, None
     if lat and lon:
@@ -63,12 +62,8 @@ def find_courts(search_date, target_time, target_region=None, lat=None, lon=None
         return []
 
     while True:
-        # search_date (e.g., "2025-08-08")를 datetime 객체로 변환
         start_date_obj = datetime.strptime(search_date, "%Y-%m-%d")
-        # 다음 날을 계산
         end_date_obj = start_date_obj + timedelta(days=1)
-
-        # API가 요구하는 형식으로 날짜 문자열 포맷팅
         search_start_at_str = start_date_obj.strftime("%Y-%m-%d 00:00")
         search_end_at_str = end_date_obj.strftime("%Y-%m-%d 00:00")
 
@@ -90,7 +85,7 @@ def find_courts(search_date, target_time, target_region=None, lat=None, lon=None
             current_list = data.get('list', [])
 
             if not current_list:
-                break  # 더 이상 데이터가 없으면 루프 종료
+                break
 
             courts_within_distance = []
             all_courts_in_page_are_outside_limit = True
@@ -100,15 +95,21 @@ def find_courts(search_date, target_time, target_region=None, lat=None, lon=None
                 court_lon = court_data.get("longitude")
                 if court_lat and court_lon:
                     distance = haversine_distance(center_lat, center_lon, float(court_lat), float(court_lon))
-                    if distance <= DISTANCE_LIMIT_KM:
+                    if distance <= distance_limit:
+                        # 개선 1: 구장 이름 조합 및 데이터 정제
+                        facility_name = court_data.get("facility_name", "")
+                        stadium_name = court_data.get("stadium_name", "")
+                        full_name = f"{facility_name} ({stadium_name})" if stadium_name else facility_name
+                        court_data["full_name"] = full_name
+                        court_data["is_indoor_bool"] = court_data.get("is_indoor") == "Y"
+                        
                         courts_within_distance.append(court_data)
                         all_courts_in_page_are_outside_limit = False
 
             all_courts_data.extend(courts_within_distance)
 
-            # 현재 페이지의 모든 결과가 5km를 초과하면 더 이상 검색할 필요가 없음
             if all_courts_in_page_are_outside_limit:
-                print(f"페이지 {page}의 모든 경기장이 {DISTANCE_LIMIT_KM}km를 초과하여 검색을 중단합니다.")
+                print(f"페이지 {page}의 모든 경기장이 {distance_limit}km를 초과하여 검색을 중단합니다.")
                 break
 
             page += 1
@@ -120,27 +121,27 @@ def find_courts(search_date, target_time, target_region=None, lat=None, lon=None
             print("JSON 파싱 오류")
             return []
 
+    # 개선 2: 고유 ID(id)를 기준으로 구장을 그룹화
     courts_dict = {}
     for court in all_courts_data:
-        court_name = court.get("facility_name")
-        court_address = court.get("address")
-        court_key = (court_name, court_address)
-
-        if court_key not in courts_dict:
-            courts_dict[court_key] = {
-                "name": court_name,
-                "address": court_address,
+        court_id = court.get("id")
+        if court_id not in courts_dict:
+            courts_dict[court_id] = {
+                "id": court_id,
+                "name": court.get("full_name"),
+                "address": court.get("address"),
                 "latitude": court.get("latitude"),
                 "longitude": court.get("longitude"),
+                "is_indoor": court.get("is_indoor_bool"),
                 "available_times": []
             }
 
         for reservation in court.get("schedule_list", []):
-            start_at_str = reservation.get("start_at", "")  # "YYYY-MM-DD HH:mm"
+            start_at_str = reservation.get("start_at", "")
             if not start_at_str or search_date not in start_at_str:
                 continue
 
-            current_res_time_str = start_at_str.split(' ')[1]  # "HH:mm"
+            current_res_time_str = start_at_str.split(' ')[1]
             match_type = ""
 
             if target_time:
@@ -170,8 +171,8 @@ def find_courts(search_date, target_time, target_region=None, lat=None, lon=None
                 "price": reservation.get("match_price"),
                 "match_type": match_type
             }
-            if time_slot not in courts_dict[court_key]["available_times"]:
-                courts_dict[court_key]["available_times"].append(time_slot)
+            if time_slot not in courts_dict[court_id]["available_times"]:
+                courts_dict[court_id]["available_times"].append(time_slot)
 
     return list(courts_dict.values())
 
@@ -183,12 +184,13 @@ def search():
     time = request.form.get('time')
     lat = request.form.get('lat')
     lon = request.form.get('lon')
+    # 개선 3: 사용자가 선택한 검색 반경 값 (기본값 5km)
+    distance_limit = request.form.get('distance_limit', 5, type=int)
 
-    if time:
-        if len(time) > 5:
-            time = time[:5]
+    if time and len(time) > 5:
+        time = time[:5]
 
-    courts = find_courts(search_date, time, target_region=region, lat=lat, lon=lon)
+    courts = find_courts(search_date, time, distance_limit, target_region=region, lat=lat, lon=lon)
     return jsonify(courts)
 
 @app.route('/')

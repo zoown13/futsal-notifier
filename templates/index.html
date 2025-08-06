@@ -39,6 +39,16 @@
                 <label for="time">시간 (예: 20:00)</label>
                 <input type="time" id="time" name="time">
             </div>
+            <div class="form-group">
+                <label for="distance_limit">검색 반경</label>
+                <select id="distance_limit" name="distance_limit">
+                    <option value="1">1km</option>
+                    <option value="3">3km</option>
+                    <option value="5" selected>5km</option>
+                    <option value="10">10km</option>
+                    <option value="20">20km</option>
+                </select>
+            </div>
             <button type="submit">검색</button>
         </form>
         <div id="map-container">
