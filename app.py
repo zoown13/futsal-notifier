@@ -42,7 +42,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-def find_courts(search_date, target_time, distance_limit, target_region=None, lat=None, lon=None):
+def find_courts(search_date, target_time, distance_limit, time_range_minutes, target_region=None, lat=None, lon=None):
     """
     아이엠그라운드의 새로운 API를 사용하여 조건에 맞는 풋살장을 찾아 그룹화하여 반환합니다.
     """
@@ -153,7 +153,7 @@ def find_courts(search_date, target_time, distance_limit, target_region=None, la
 
                     if time_diff == timedelta(minutes=0):
                         match_type = "exact"
-                    elif time_diff <= timedelta(minutes=30):
+                    elif time_diff <= timedelta(minutes=time_range_minutes):
                         match_type = "nearby"
                     else:
                         continue
@@ -190,7 +190,8 @@ def search():
     if time and len(time) > 5:
         time = time[:5]
 
-    courts = find_courts(search_date, time, distance_limit, target_region=region, lat=lat, lon=lon)
+    time_range_minutes = request.form.get('time_range_minutes', 30, type=int)
+    courts = find_courts(search_date, time, distance_limit, time_range_minutes, target_region=region, lat=lat, lon=lon)
     return jsonify(courts)
 
 @app.route('/')
