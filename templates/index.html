@@ -59,6 +59,17 @@
                     <option value="20">20km</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label>실내/야외</label>
+                <div>
+                    <input type="radio" id="indoor_all" name="is_indoor_filter" value="all" checked>
+                    <label for="indoor_all">전체</label>
+                    <input type="radio" id="indoor_yes" name="is_indoor_filter" value="Y">
+                    <label for="indoor_yes">실내</label>
+                    <input type="radio" id="indoor_no" name="is_indoor_filter" value="N">
+                    <label for="indoor_no">야외</label>
+                </div>
+            </div>
             <button type="submit">검색</button>
         </form>
         <div id="map-container">
@@ -182,6 +193,12 @@
                     });
 
                     let courtContentHtml = `<h3>${court.name}</h3><p><strong>주소:</strong> ${court.address}</p>`;
+                    if (court.is_indoor !== undefined) {
+                        courtContentHtml += `<p><strong>구분:</strong> ${court.is_indoor ? '실내' : '야외'}</p>`;
+                    }
+                    if (court.recommend_players && court.recommend_players.length > 0) {
+                        courtContentHtml += `<p><strong>추천 인원:</strong> ${court.recommend_players.join(', ')}명</p>`;
+                    }
                     if (exactTimesHtml) courtContentHtml += `<h4 class="highlight">정확히 일치하는 시간대</h4><div>${exactTimesHtml}</div>`;
                     if (nearbyTimesHtml) courtContentHtml += `<h4>근방 시간대 (±30분)</h4><div>${nearbyTimesHtml}</div>`;
                     if (allTimesHtml && !exactTimesHtml && !nearbyTimesHtml) courtContentHtml += `<h4>모든 예약 가능 시간대</h4><div>${allTimesHtml}</div>`;

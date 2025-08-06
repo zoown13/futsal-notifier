@@ -42,7 +42,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-def find_courts(search_date, target_time, distance_limit, time_range_minutes, target_region=None, lat=None, lon=None):
+def find_courts(search_date, target_time, distance_limit, time_range_minutes, is_indoor_filter, target_region=None, lat=None, lon=None):
     """
     아이엠그라운드의 새로운 API를 사용하여 조건에 맞는 풋살장을 찾아 그룹화하여 반환합니다.
     """
@@ -93,6 +93,15 @@ def find_courts(search_date, target_time, distance_limit, time_range_minutes, ta
             for court_data in current_list:
                 court_lat = court_data.get("latitude")
                 court_lon = court_data.get("longitude")
+                
+                # 실내/야외 필터링
+                is_indoor_api = court_data.get("is_indoor")
+                if is_indoor_filter != "all":
+                    if is_indoor_filter == "Y" and is_indoor_api != "Y":
+                        continue
+                    if is_indoor_filter == "N" and is_indoor_api != "N":
+                        continue
+
                 if court_lat and court_lon:
                     distance = haversine_distance(center_lat, center_lon, float(court_lat), float(court_lon))
                     if distance <= distance_limit:
@@ -101,7 +110,8 @@ def find_courts(search_date, target_time, distance_limit, time_range_minutes, ta
                         stadium_name = court_data.get("stadium_name", "")
                         full_name = f"{facility_name} ({stadium_name})" if stadium_name else facility_name
                         court_data["full_name"] = full_name
-                        court_data["is_indoor_bool"] = court_data.get("is_indoor") == "Y"
+                        court_data["is_indoor_bool"] = is_indoor_api == "Y"
+                        court_data["recommend_players"] = court_data.get("recommend_players", []) # 추천 인원 추가
                         
                         courts_within_distance.append(court_data)
                         all_courts_in_page_are_outside_limit = False
@@ -191,7 +201,8 @@ def search():
         time = time[:5]
 
     time_range_minutes = request.form.get('time_range_minutes', 30, type=int)
-    courts = find_courts(search_date, time, distance_limit, time_range_minutes, target_region=region, lat=lat, lon=lon)
+    is_indoor_filter = request.form.get('is_indoor_filter', 'all')
+    courts = find_courts(search_date, time, distance_limit, time_range_minutes, is_indoor_filter, target_region=region, lat=lat, lon=lon)
     return jsonify(courts)
 
 @app.route('/')
